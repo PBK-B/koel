@@ -5,6 +5,7 @@ namespace App\Values;
 use App\Models\Album;
 use App\Models\Artist;
 use Illuminate\Contracts\Support\Arrayable;
+// use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Arr;
 
 final class SongScanInformation implements Arrayable
@@ -57,10 +58,34 @@ final class SongScanInformation implements Arrayable
             'unsyncedlyrics',
         ]));
 
+        $__title_d  = self::getTag($tags, 'title', pathinfo($path, PATHINFO_FILENAME));
+        $__album_d  = self::getTag($tags, 'album', Album::UNKNOWN_NAME);
+        $__artist_d = self::getTag($tags, 'artist', Artist::UNKNOWN_NAME);
+
+        // dealing with GB2312 character encoding problems
+        $raw_tags = array_merge(
+            Arr::get($info, 'id3v1', []),
+            Arr::get($info, 'id3v2', []),
+            Arr::get($comments, 'id3v2', [])
+        );
+
+        $__title  = self::encodingGBKorUTF8($raw_tags['title'], $__title_d);
+        $__album  = self::encodingGBKorUTF8($raw_tags['album'], $__album_d);
+        $__artist = self::encodingGBKorUTF8($raw_tags['artist'], $__artist_d);
+
+        if ($__album !== $__album_d) {
+            $albumArtistName = Artist::VARIOUS_NAME;
+        }
+
+        // Log::debug(var_export($__title, true));
+        // Log::debug(var_export($__album, true));
+        // Log::debug(var_export($__artist, true));
+        // Log::debug(var_export($albumArtistName, true));
+
         return new self(
-            title: html_entity_decode(self::getTag($tags, 'title', pathinfo($path, PATHINFO_FILENAME))),
-            albumName: html_entity_decode(self::getTag($tags, 'album', Album::UNKNOWN_NAME)),
-            artistName: html_entity_decode(self::getTag($tags, 'artist', Artist::UNKNOWN_NAME)),
+            title: html_entity_decode($__title),
+            albumName: html_entity_decode($__album),
+            artistName: html_entity_decode($__artist),
             albumArtistName: html_entity_decode($albumArtistName),
             track: (int) self::getTag($tags, ['track', 'tracknumber', 'track_number']),
             disc: (int) self::getTag($tags, ['discnumber', 'part_of_a_set'], 1),
@@ -74,7 +99,18 @@ final class SongScanInformation implements Arrayable
         );
     }
 
-    private static function getTag(array $arr, string|array $keys, $default = ''): mixed
+    private static function encodingGBKorUTF8(mixed $bytes, $default = ''): string
+    {
+        if (!$bytes) {
+            return $default;
+        }
+
+        $encoding = mb_detect_encoding($bytes, ['EUC-CN', 'GB2312', 'UTF-8', 'ISO-8859-1', 'ASCII'], true);
+        $isGBK    = $encoding === 'EUC-CN' || $encoding === 'GB2312';
+        return $isGBK ? mb_convert_encoding($bytes, 'UTF-8', 'GB2312') : $default;
+    }
+
+    private static function getTag(array $arr, string | array $keys, $default = ''): mixed
     {
         $keys = Arr::wrap($keys);
 
